@@ -8,9 +8,9 @@ const sftp = new Client();
 
 // use your test ssh server config
 const config = {
-    host: '172.29.84.8',
-    username: 'jyu213',
-    password: '**'
+    host: process.env.SFTP_HOST,
+    username: process.env.SFTP_USERNAME,
+    password: process.env.SFTP_PASSWORD
 };
 const BASIC_URL = path.resolve(__dirname, '../testServer/') + '/';
 
