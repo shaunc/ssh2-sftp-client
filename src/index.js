@@ -110,7 +110,38 @@ SftpClient.prototype.put = async function (
         stream.end(input)
         return false
       }
-      input.pipe(stream)
+      let inPos = 0
+      let outPos = 0
+      let doneInput = false
+      input.on('data', (chunk, enc, cb) => {
+        inPos += chunk.length
+        input.pause()
+        const cont = stream.writeData(
+          stream.handle, chunk, 0, chunk.length, 0, (err, n) => {
+            if (err !== undefined) {
+              reject(err)
+              return
+            }
+            outPos += n
+            if (doneInput && inPos === outPos) {
+              resolve()
+            }
+        })
+        if (!cont) {
+          stream.on('continue', () => {
+            input.resume()
+          })
+        } else {
+          input.resume()
+        }
+      })
+      input.on('end', () => {
+        doneInput = true
+        if (inPos === outPos) {
+          resolve()
+        }
+      })
+      // input.pipe(stream)
     } else {
       reject(Error('sftp connect error'))
     }
