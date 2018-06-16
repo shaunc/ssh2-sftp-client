@@ -11,14 +11,26 @@ chai.use(chaiSubset)
 const sftp = new Client()
 const join = path.join
 
+const {
+  SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD, SFTP_ROOT
+} = process.env
+
+if (SFTP_HOST === undefined || SFTP_USERNAME === undefined) {
+  throw new Error(
+    'SFTP_HOST and SFTP_USERNAME, at least, should be defined.\n'
+    + 'SFTP_PASSWORD and SFTP_ROOT can also be set.')
+}
+
 // use your test ssh server config
 const config = {
-  host: process.env.SFTP_HOST,
-  username: process.env.SFTP_USERNAME,
-  password: process.env.SFTP_PASSWORD
+  host: SFTP_HOST,
+  username: SFTP_USERNAME,
+}
+if (SFTP_PASSWORD !== undefined) {
+  config.password = SFTP_PASSWORD
 }
 const BASIC_URL = path.join(
-  process.env.SFTP_ROOT || path.resolve(__dirname, '../testServer/'),
+  SFTP_ROOT || path.resolve(__dirname, '../testServer/'),
   '/')
 
 after(() => {
@@ -116,17 +128,23 @@ describe('get', () => {
 })
 
 describe('put', () => {
+  const sent = []
   before(() => {
     return sftp.connect(config, 'once')
   })
-  after(() => {
-    return sftp.delete(BASIC_URL + 'mocha-put-string.md').then(() => {
-      return sftp.delete(BASIC_URL + 'mocha-put-buffer.md')
-    }).then(() => {
-      return sftp.delete(BASIC_URL + 'mocha-put-stream.md')
-    }).then(() => {
-      return sftp.end()
-    })
+  after(async () => {
+    async function del(fn) {
+      try {
+        await sftp.delete(fn)
+      } catch (err) {
+        console.log('err deleteing', fn)
+        throw err
+      }
+    }
+    for(const fn of sent) {
+      await del(fn)
+    }
+    await sftp.end()
   })
 
   it('return should be a promise', () => {
@@ -136,6 +154,7 @@ describe('put', () => {
   it('put local path file', () => {
     let path = join(__dirname, '/mocha.opts')
     return sftp.put(path, BASIC_URL + 'mocha-put-string.md').then(() => {
+      sent.push(BASIC_URL + 'mocha-put-string.md')
       return sftp.get(BASIC_URL + 'mocha-put-string.md')
     }).then((list) => {
       return expect(list).to.not.empty
@@ -146,6 +165,7 @@ describe('put', () => {
     let str = Buffer.from('hello')
 
     return sftp.put(str, BASIC_URL + 'mocha-put-buffer.md').then(() => {
+      sent.push(BASIC_URL + 'mocha-put-buffer.md')
       return sftp.get(BASIC_URL + 'mocha-put-buffer.md')
     }).then((data) => {
       return expect(data).to.not.empty
@@ -159,7 +179,23 @@ describe('put', () => {
     str2.push(null)
 
     return sftp.put(str2, BASIC_URL + 'mocha-put-stream.md').then(() => {
+      sent.push(BASIC_URL + 'mocha-put-stream.md')
       return sftp.get(BASIC_URL + 'mocha-put-stream.md')
+    }).then((data) => {
+      return expect(data).to.not.empty
+    })
+  })
+  it('put long stream file', () => {
+    var str2 = new stream.Readable()
+    str2._read = function noop () {}
+    for (let i = 0; i < 10000; i++) {
+      str2.push('your text here')
+    }
+    str2.push(null)
+
+    return sftp.put(str2, BASIC_URL + 'mocha-put-long-stream.md').then(() => {
+      sent.push(BASIC_URL + 'mocha-put-long-stream.md')
+      return sftp.get(BASIC_URL + 'mocha-put-long-stream.md')
     }).then((data) => {
       return expect(data).to.not.empty
     })

@@ -74,14 +74,17 @@ SftpClient.prototype.get = async function (
 }
 
 /**
- * Create file
+ * Copy file from client to server.
  *
  * @param  {String|Buffer|stream} input
  * @param  {String} remotePath,
  * @param  {Object} useCompression [description]
  * @param  {String} encoding. Encoding for the WriteStream, can be any
  *   value supported by node streams.
- * @return {Promise[type]}                [description]
+ * @return {Promise[type]}         [description]
+ *
+ * NB: uses low-level "writeData" until ssh2-streams support
+ * flow-control properly.
  */
 SftpClient.prototype.put = async function (
   input, remotePath, useCompression, encoding, otherOptions) {
@@ -113,10 +116,13 @@ SftpClient.prototype.put = async function (
       let inPos = 0
       let outPos = 0
       let doneInput = false
-      input.on('data', (chunk, enc, cb) => {
+      input.on('data', async (chunk, enc, cb) => {
         inPos += chunk.length
         input.pause()
-        const cont = stream.writeData(
+        if (!Buffer.isBuffer(stream.handle)) {
+          await new Promise((res) => stream.once('open', res))
+        }
+        const cont = stream.sftp.writeData(
           stream.handle, chunk, 0, chunk.length, 0, (err, n) => {
             if (err !== undefined) {
               reject(err)
@@ -128,6 +134,7 @@ SftpClient.prototype.put = async function (
             }
         })
         if (!cont) {
+          console.log("WAIT")
           stream.on('continue', () => {
             input.resume()
           })
